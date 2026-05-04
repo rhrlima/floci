@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.services.glue.model.Database;
+import io.github.hectorvent.floci.services.glue.model.GlueJob;
+import io.github.hectorvent.floci.services.glue.model.GlueJobRun;
 import io.github.hectorvent.floci.services.glue.model.Partition;
 import io.github.hectorvent.floci.services.glue.model.Table;
 import io.github.hectorvent.floci.services.glue.schemaregistry.GlueSchemaRegistryService;
@@ -111,6 +113,88 @@ public class GlueJsonHandler {
             case "TagResource" -> handleTagResource(request);
             case "UntagResource" -> handleUntagResource(request);
             case "GetTags" -> handleGetTags(request);
+            case "CreateJob" -> {
+                GlueJob job = mapper.treeToValue(request, GlueJob.class);
+                GlueJob created = glueService.createJob(job);
+                yield Response.ok(Map.of("Name", created.getName())).build();
+            }
+            case "GetJob" -> {
+                String jobName = request.get("JobName").asText();
+                yield Response.ok(Map.of("Job", glueService.getJob(jobName))).build();
+            }
+            case "GetJobs" -> {
+                yield Response.ok(Map.of("Jobs", glueService.getJobs())).build();
+            }
+            case "UpdateJob" -> {
+                String jobName = request.get("JobName").asText();
+                GlueJob update = mapper.treeToValue(request.get("JobUpdate"), GlueJob.class);
+                GlueJob updated = glueService.updateJob(jobName, update);
+                yield Response.ok(Map.of("JobName", updated.getName())).build();
+            }
+            case "DeleteJob" -> {
+                String jobName = request.get("JobName").asText();
+                glueService.deleteJob(jobName);
+                yield Response.ok(Map.of("JobName", jobName)).build();
+            }
+            case "ListJobs" -> {
+                yield Response.ok(Map.of("JobNames", glueService.listJobNames())).build();
+            }
+            case "BatchGetJobs" -> {
+                @SuppressWarnings("unchecked")
+                java.util.List<String> jobNames = mapper.treeToValue(request.get("JobNames"), java.util.List.class);
+                yield Response.ok(Map.of(
+                        "Jobs", glueService.batchGetJobs(jobNames),
+                        "JobsNotFound", glueService.batchGetJobsNotFound(jobNames)
+                )).build();
+            }
+            case "StartJobRun" -> {
+                String jobName = request.get("JobName").asText();
+                @SuppressWarnings("unchecked")
+                Map<String, String> arguments = request.has("Arguments")
+                        ? mapper.treeToValue(request.get("Arguments"), Map.class)
+                        : null;
+                GlueJobRun run = glueService.startJobRun(jobName, arguments);
+                yield Response.ok(Map.of("JobRunId", run.getId())).build();
+            }
+            case "GetJobRun" -> {
+                String jobName = request.get("JobName").asText();
+                String runId = request.get("RunId").asText();
+                yield Response.ok(Map.of("JobRun", glueService.getJobRun(jobName, runId))).build();
+            }
+            case "GetJobRuns" -> {
+                String jobName = request.get("JobName").asText();
+                yield Response.ok(Map.of("JobRuns", glueService.getJobRuns(jobName))).build();
+            }
+            case "BatchStopJobRun" -> {
+                String jobName = request.get("JobName").asText();
+                @SuppressWarnings("unchecked")
+                java.util.List<String> runIds = mapper.treeToValue(request.get("JobRunIds"), java.util.List.class);
+                java.util.List<String> stopped = glueService.batchStopJobRun(jobName, runIds);
+                java.util.List<Map<String, Object>> successful = new ArrayList<>();
+                for (String id : stopped) {
+                    Map<String, Object> entry = new LinkedHashMap<>();
+                    entry.put("JobName", jobName);
+                    entry.put("JobRunId", id);
+                    successful.add(entry);
+                }
+                java.util.List<Map<String, Object>> errors = new ArrayList<>();
+                for (String id : runIds) {
+                    if (!stopped.contains(id)) {
+                        Map<String, Object> detail = new LinkedHashMap<>();
+                        detail.put("ErrorCode", "ConcurrentRunsExceededException");
+                        detail.put("ErrorMessage", "Run " + id + " is not in a stoppable state");
+                        Map<String, Object> entry = new LinkedHashMap<>();
+                        entry.put("JobName", jobName);
+                        entry.put("JobRunId", id);
+                        entry.put("ErrorDetail", detail);
+                        errors.add(entry);
+                    }
+                }
+                Map<String, Object> batchStopResponse = new LinkedHashMap<>();
+                batchStopResponse.put("SuccessfulSubmissions", successful);
+                batchStopResponse.put("Errors", errors);
+                yield Response.ok(batchStopResponse).build();
+            }
             default -> throw new AwsException("InvalidAction", "Action " + action + " is not supported", 400);
         };
     }

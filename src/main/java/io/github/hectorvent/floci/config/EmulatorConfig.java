@@ -503,6 +503,21 @@ public interface EmulatorConfig {
     interface GlueServiceConfig {
         @WithDefault("true")
         boolean enabled();
+
+        GlueExecutionConfig execution();
+
+        interface GlueExecutionConfig {
+            /** When true, pythonshell jobs are actually executed in a Docker container. */
+            @WithDefault("false")
+            boolean enabled();
+
+            /** Docker image to use for pythonshell job execution. */
+            @WithDefault("python:3.11")
+            String image();
+
+            /** Docker network to attach the Python container to. Empty = default bridge. */
+            Optional<String> dockerNetwork();
+        }
     }
 
     interface SesServiceConfig {

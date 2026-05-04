@@ -175,6 +175,9 @@ floci:
       default-image: "floci/floci-duck:latest"
     glue:
       enabled: true
+      execution:
+        enabled: false
+        image: "python:3.11"
     ses:
       enabled: true
       # smtp-host: mailpit          # SMTP server for email relay (empty = store only)
